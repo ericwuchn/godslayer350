@@ -4,7 +4,7 @@
 
 using namespace sc2;
 
-// from example code line 62, for checking if unit is base
+// from s2client-api\examples\common\bot_examples.cc line 62, for checking if unit is base
 struct IsTownHall {
 	bool operator()(const Unit& unit) {
 		switch (unit.unit_type.ToType()) {
@@ -42,7 +42,7 @@ public:
 	virtual void OnUnitIdle(const Unit* unit) final {
 		switch (unit->unit_type.ToType()) {
 			case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
-				// from example code line 2092, for training SCV 
+				// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
 				const ObservationInterface* observation = Observation();
 				Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
 
