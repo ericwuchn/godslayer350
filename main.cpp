@@ -36,7 +36,10 @@ public:
 		if (CountUnitType(UNIT_TYPEID::TERRAN_ENGINEERINGBAY) < 1) {
 			TryBuildStructure(ABILITY_ID::BUILD_ENGINEERINGBAY);
 		}
-		TryBuildStructure(ABILITY_ID::BUILD_MISSILETURRET);
+		if (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) < (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) / 3)) {
+			TryBuildStructure(ABILITY_ID::BUILD_MISSILETURRET);
+		}
+
     }
 
 	virtual void OnUnitIdle(const Unit* unit) final {
@@ -167,8 +170,8 @@ private:
 		if (CountUnitType(UNIT_TYPEID::TERRAN_SUPPLYDEPOT) < 1) {
 			return false;
 		}
-
-		if (CountUnitType(UNIT_TYPEID::TERRAN_BARRACKS) > 0) {
+		// for every base build 3 barracks
+		if (CountUnitType(UNIT_TYPEID::TERRAN_BARRACKS) >= 3 * (CountUnitType(UNIT_TYPEID::TERRAN_COMMANDCENTER) + CountUnitType(UNIT_TYPEID::TERRAN_ORBITALCOMMAND) + CountUnitType(UNIT_TYPEID::TERRAN_ORBITALCOMMANDFLYING) + CountUnitType(UNIT_TYPEID::TERRAN_PLANETARYFORTRESS))) {
 			return false;
 		}
 
@@ -185,7 +188,7 @@ int main(int argc, char* argv[]) {
     Bot bot;
     coordinator.SetParticipants({
         CreateParticipant(Race::Terran, &bot),
-        CreateComputer(Race::Zerg)
+        CreateComputer(Race::Zerg, Difficulty::Hard)
     });
 
     coordinator.LaunchStarcraft();
