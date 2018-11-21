@@ -23,13 +23,13 @@ struct IsTownHall {
 
 class Bot : public Agent {
 public:
-    virtual void OnGameStart() final {
-        std::cout << "Hello, World!" << std::endl;
-    }
+	virtual void OnGameStart() final {
+		std::cout << "Hello, World!" << std::endl;
+	}
 
-    virtual void OnStep() final {
+	virtual void OnStep() final {
 		const ObservationInterface* observation = Observation();
-        std::cout << Observation()->GetGameLoop() << std::endl;
+		std::cout << Observation()->GetGameLoop() << std::endl;
 		TryBuildSupplyDepot();
 		TryBuildBarracks();
 		TryBuildCommandCenters();
@@ -40,44 +40,45 @@ public:
 		if (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) < (CountUnitType(UNIT_TYPEID::TERRAN_BUNKER) / 3)) {
 			TryBuildStructure(ABILITY_ID::BUILD_MISSILETURRET);
 		}
-
-    }
+		TryDefense();
+		TryGoBackToCommandCenter();
+	}
 
 	virtual void OnUnitIdle(const Unit* unit) final {
 		switch (unit->unit_type.ToType()) {
-			case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
-				// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
-				//if there is a base with less than ideal workers
-				if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
-					if (Observation()->GetMinerals() >= 50) {
-						Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
-					}
+		case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
+			// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
+			//if there is a base with less than ideal workers
+			if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
+				if (Observation()->GetMinerals() >= 50) {
+					Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
 				}
-				
-		    }
-			case UNIT_TYPEID::TERRAN_SCV: {
-				const Unit* mineral_target = FindNearestMineralPatch(unit->pos);
-				if (!mineral_target) {
-					break;
-				}
-				Actions()->UnitCommand(unit, ABILITY_ID::SMART, mineral_target);
+			}
+
+		}
+		case UNIT_TYPEID::TERRAN_SCV: {
+			const Unit* mineral_target = FindNearestMineralPatch(unit->pos);
+			if (!mineral_target) {
 				break;
 			}
-			case UNIT_TYPEID::TERRAN_BARRACKS: {
-				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+			Actions()->UnitCommand(unit, ABILITY_ID::SMART, mineral_target);
+			break;
+		}
+		case UNIT_TYPEID::TERRAN_BARRACKS: {
+			Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+			break;
+		}
+		case UNIT_TYPEID::TERRAN_MARINE: {
+			const Unit* bunker_target = FindNearestBunker(unit->pos);
+			if (!bunker_target) {
 				break;
 			}
-			case UNIT_TYPEID::TERRAN_MARINE: {
-				const Unit* bunker_target = FindNearestBunker(unit->pos);
-				if (!bunker_target) {
-					break;
-				}
-				Actions()->UnitCommand(unit, ABILITY_ID::SMART, bunker_target);
-				break;
-			}
-			default: {
-				break;
-			}
+			Actions()->UnitCommand(unit, ABILITY_ID::SMART, bunker_target);
+			break;
+		}
+		default: {
+			break;
+		}
 		}
 	}
 private:
@@ -130,6 +131,39 @@ private:
 		return target;
 	}
 
+	const Unit* FindNearestEnemy(const Point2D& start) {
+		Units units = Observation()->GetUnits(Unit::Alliance::Enemy);
+		float distance = std::numeric_limits<float>::max();
+		const Unit* target = nullptr;
+		for (const auto& u : units) {
+			float d = DistanceSquared2D(u->pos, start);
+			if (d < distance) {
+				distance = d;
+				target = u;
+			}
+		}
+		return target;
+	}
+
+	const Unit* FindNearestCommandCenter(const Point2D& start) {
+		Units units = Observation()->GetUnits(Unit::Alliance::Self);
+		float distance = std::numeric_limits<float>::max();
+		const Unit* target = nullptr;
+		for (const auto& u : units) {
+			if (u->unit_type == UNIT_TYPEID::TERRAN_COMMANDCENTER) {
+				if (u->cargo_space_taken < u->cargo_space_max && u->build_progress == 1.0) {
+					float d = DistanceSquared2D(u->pos, start);
+					if (d < distance) {
+						distance = d;
+						target = u;
+					}
+				}
+
+			}
+		}
+		return target;
+	}
+
 	const Unit* FindNearestBunker(const Point2D& start) {
 		Units units = Observation()->GetUnits(Unit::Alliance::Self);
 		float distance = std::numeric_limits<float>::max();
@@ -143,7 +177,7 @@ private:
 						target = u;
 					}
 				}
-				
+
 			}
 		}
 		return target;
@@ -215,28 +249,53 @@ private:
 		for (const auto& u : units) {
 			if (u->unit_type == UNIT_TYPEID::NEUTRAL_MINERALFIELD && Distance2D(u->pos, Observation()->GetStartLocation()) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[0]) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[1]) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[2]) > 50.0f) {
 				TryBuildStructureAt(u->pos, ABILITY_ID::BUILD_COMMANDCENTER);
-				
+
 			}
 		}
 	}
-	
+
+	bool TryDefense() {
+		const ObservationInterface* observation = Observation();
+		Units enemies = observation->GetUnits(Unit::Alliance::Enemy);
+		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_MARINE));
+		if (enemies.size() > 0) {
+			for (const auto& defense : defenses) {
+				Actions()->UnitCommand(defense, ABILITY_ID::ATTACK_ATTACK, FindNearestEnemy(defense->pos));
+			}
+			return true;
+		}
+		return false;
+	}
+
+	bool TryGoBackToCommandCenter() {
+		const ObservationInterface* observation = Observation();
+		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_MARINE));
+		for (const auto& defense : defenses) {
+			if (DistanceSquared2D(defense->pos, FindNearestCommandCenter(defense->pos)->pos) > 500.0f) {
+				Actions()->UnitCommand(defense, ABILITY_ID::SMART, FindNearestCommandCenter(defense->pos)->pos);
+			}
+			return true;
+		}
+		return false;
+	}
+
 };
 
 int main(int argc, char* argv[]) {
-    Coordinator coordinator;
-    coordinator.LoadSettings(argc, argv);
+	Coordinator coordinator;
+	coordinator.LoadSettings(argc, argv);
 
-    Bot bot;
-    coordinator.SetParticipants({
-        CreateParticipant(Race::Terran, &bot),
-        CreateComputer(Race::Zerg, Difficulty::Hard)
-    });
+	Bot bot;
+	coordinator.SetParticipants({
+		CreateParticipant(Race::Terran, &bot),
+		CreateComputer(Race::Zerg, Difficulty::Hard)
+		});
 
-    coordinator.LaunchStarcraft();
-    coordinator.StartGame("CactusValleyLE.SC2Map");
+	coordinator.LaunchStarcraft();
+	coordinator.StartGame("CactusValleyLE.SC2Map");
 
-    while (coordinator.Update()) {
-    }
+	while (coordinator.Update()) {
+	}
 
-    return 0;
+	return 0;
 }
