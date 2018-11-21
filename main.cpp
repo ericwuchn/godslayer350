@@ -32,11 +32,12 @@ public:
         std::cout << Observation()->GetGameLoop() << std::endl;
 		TryBuildSupplyDepot();
 		TryBuildBarracks();
+		TryBuildCommandCenters();
 		TryBuildStructure(ABILITY_ID::BUILD_BUNKER);
 		if (CountUnitType(UNIT_TYPEID::TERRAN_ENGINEERINGBAY) < 1) {
 			TryBuildStructure(ABILITY_ID::BUILD_ENGINEERINGBAY);
 		}
-		if (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) < (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) / 3)) {
+		if (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) < (CountUnitType(UNIT_TYPEID::TERRAN_BUNKER) / 3)) {
 			TryBuildStructure(ABILITY_ID::BUILD_MISSILETURRET);
 		}
 
@@ -46,18 +47,13 @@ public:
 		switch (unit->unit_type.ToType()) {
 			case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
 				// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
-				const ObservationInterface* observation = Observation();
-				Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
-
-				for (const auto& base : bases) {
-					//if there is a base with less than ideal workers
-					if (base->assigned_harvesters < base->ideal_harvesters && base->build_progress == 1) {
-						if (observation->GetMinerals() >= 50) {
-							Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
-						}
+				//if there is a base with less than ideal workers
+				if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
+					if (Observation()->GetMinerals() >= 50) {
+						Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
 					}
 				}
-			    break;
+				
 		    }
 			case UNIT_TYPEID::TERRAN_SCV: {
 				const Unit* mineral_target = FindNearestMineralPatch(unit->pos);
@@ -157,7 +153,7 @@ private:
 		const ObservationInterface* observation = Observation();
 
 		// If we are not supply capped, don't build a supply depot.
-		if (observation->GetFoodUsed() <= observation->GetFoodCap() - 2)
+		if (observation->GetFoodUsed() <= observation->GetFoodCap() - 4)
 			return false;
 
 		// Try and build a depot. Find a random SCV and give it the order.
@@ -178,6 +174,51 @@ private:
 		return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS);
 	}
 
+	bool TryBuildStructureAt(Point2D position, ABILITY_ID ability_type_for_structure, UNIT_TYPEID unit_type = UNIT_TYPEID::TERRAN_SCV) {
+		const ObservationInterface* observation = Observation();
+
+		// If a unit already is building a supply structure of this type, do nothing.
+		// Also get an scv to build the structure.
+		const Unit* unit_to_build = nullptr;
+		Units units = observation->GetUnits(Unit::Alliance::Self);
+		for (const auto& unit : units) {
+			for (const auto& order : unit->orders) {
+				if (order.ability_id == ability_type_for_structure) {
+					return false;
+				}
+			}
+
+			if (unit->unit_type == unit_type) {
+				unit_to_build = unit;
+			}
+		}
+
+		float rx = GetRandomScalar();
+		float ry = GetRandomScalar();
+
+		Actions()->UnitCommand(unit_to_build,
+			ability_type_for_structure,
+			Point2D(position.x + rx * 15.0f, position.y + ry * 15.0f));
+
+		return true;
+	}
+
+	void TryBuildCommandCenters() {
+		Units units = Observation()->GetUnits(Unit::Alliance::Neutral);
+		float distance = std::numeric_limits<float>::max();
+		const Unit* unit_to_build = nullptr;
+		for (const auto& u : units) {
+			if (u->unit_type == UNIT_TYPEID::TERRAN_SCV) {
+				unit_to_build = u;
+			}
+		}
+		for (const auto& u : units) {
+			if (u->unit_type == UNIT_TYPEID::NEUTRAL_MINERALFIELD && Distance2D(u->pos, Observation()->GetStartLocation()) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[0]) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[1]) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[2]) > 50.0f) {
+				TryBuildStructureAt(u->pos, ABILITY_ID::BUILD_COMMANDCENTER);
+				
+			}
+		}
+	}
 	
 };
 
