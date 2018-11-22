@@ -25,6 +25,7 @@ class Bot : public Agent {
 public:
 	virtual void OnGameStart() final {
 		std::cout << "Hello, World!" << std::endl;
+		game_info = Observation()->GetGameInfo();
 	}
 
 	virtual void OnStep() final {
@@ -46,42 +47,48 @@ public:
 
 	virtual void OnUnitIdle(const Unit* unit) final {
 		switch (unit->unit_type.ToType()) {
-		case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
-			// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
-			//if there is a base with less than ideal workers
-			if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
-				if (Observation()->GetMinerals() >= 50) {
-					Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
+			case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
+				// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
+				//if there is a base with less than ideal workers
+				if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
+					if (Observation()->GetMinerals() >= 50) {
+						Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
+					}
 				}
-			}
 
-		}
-		case UNIT_TYPEID::TERRAN_SCV: {
-			const Unit* mineral_target = FindNearestMineralPatch(unit->pos);
-			if (!mineral_target) {
+			}
+			case UNIT_TYPEID::TERRAN_SCV: {
+				const Unit* mineral_target = FindNearestMineralPatch(unit->pos);
+				if (!mineral_target) {
+					break;
+				}
+				Actions()->UnitCommand(unit, ABILITY_ID::SMART, mineral_target);
 				break;
 			}
-			Actions()->UnitCommand(unit, ABILITY_ID::SMART, mineral_target);
-			break;
-		}
-		case UNIT_TYPEID::TERRAN_BARRACKS: {
-			Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
-			break;
-		}
-		case UNIT_TYPEID::TERRAN_MARINE: {
-			const Unit* bunker_target = FindNearestBunker(unit->pos);
-			if (!bunker_target) {
+			case UNIT_TYPEID::TERRAN_BARRACKS: {
+				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
 				break;
 			}
-			Actions()->UnitCommand(unit, ABILITY_ID::SMART, bunker_target);
-			break;
-		}
-		default: {
-			break;
-		}
+			case UNIT_TYPEID::TERRAN_MARINE: {
+				const Unit* bunker_target = FindNearestBunker(unit->pos);
+				if (!bunker_target) {
+					break;
+				}
+				Actions()->UnitCommand(unit, ABILITY_ID::SMART, bunker_target);
+				break;
+			}
+			default: {
+				break;
+			}
 		}
 	}
+
 private:
+
+	std::vector<const Unit*> army;
+
+	GameInfo game_info;
+
 	size_t CountUnitType(UNIT_TYPEID unit_type) {
 		return Observation()->GetUnits(Unit::Alliance::Self, IsUnit(unit_type)).size();
 	}
@@ -275,6 +282,76 @@ private:
 				Actions()->UnitCommand(defense, ABILITY_ID::SMART, FindNearestCommandCenter(defense->pos)->pos);
 			}
 			return true;
+		}
+		return false;
+	}
+
+	bool FindEnemyPosition(Point2D& target_pos) {
+		if (game_info.enemy_start_locations.empty()) {
+			return false;
+		}
+		target_pos = game_info.enemy_start_locations.front();
+		return true;
+	}
+
+	bool TryAttack() {
+		const ObservationInterface* observation = Observation();
+		if (army.size() > 50){
+			Actions()->UnitCommand(army, ABILITY_ID::ATTACK_ATTACK, game_info.enemy_start_locations.front());
+			return true;
+		}
+		return false;
+	}
+
+	bool TryScout() {
+		Units units = Observation()->GetUnits(Unit::Alliance::Self);
+		for (const auto& unit : units) {
+			UnitTypeID unit_type(unit->unit_type);
+			if (unit_type != UNIT_TYPEID::TERRAN_MARINE) {
+				continue;
+			}
+
+			if (!unit->orders.empty()) {
+				continue;
+			}
+
+			// Priority to attacking enemy structures.
+			const Unit* enemy_unit = nullptr;
+			Point2D target_pos;
+			if (FindEnemyPosition(target_pos)) {
+				Actions()->UnitCommand(unit, ABILITY_ID::SMART, target_pos);
+			}
+		}
+
+	}
+
+	bool TryBuildMarine() {
+		return TryBuildUnit(ABILITY_ID::TRAIN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS);
+	}
+
+	bool TryBuildUnit(AbilityID ability_type_for_unit, UnitTypeID unit_type) {
+		const ObservationInterface* observation = Observation();
+
+		const Unit* unit = nullptr;
+		if (!GetRandomUnit(unit, observation, unit_type))
+			return false;
+
+		if (!unit->orders.empty()) {
+			return false;
+		}
+
+		Actions()->UnitCommand(unit, ability_type_for_unit);
+		return true;
+	}
+
+	bool GetRandomUnit(const Unit*& unit_out, const ObservationInterface* observation, UnitTypeID unit_type) {
+		Units my_units = observation->GetUnits(Unit::Alliance::Self);
+		std::random_shuffle(my_units.begin(), my_units.end()); // Doesn't work, or doesn't work well.
+		for (const auto unit : my_units) {
+			if (unit->unit_type == unit_type) {
+				unit_out = unit;
+				return true;
+			}
 		}
 		return false;
 	}
