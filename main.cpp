@@ -1,8 +1,10 @@
 #include <sc2api/sc2_api.h>
 
 #include <iostream>
+#include <vector>
 
 using namespace sc2;
+using namespace std;
 
 // from s2client-api\examples\common\bot_examples.cc line 62, for checking if unit is base
 struct IsTownHall {
@@ -23,6 +25,7 @@ struct IsTownHall {
 
 class Bot : public Agent {
 public:
+	vector<Point2D> occupied_mineral;
 	virtual void OnGameStart() final {
 		std::cout << "Hello, World!" << std::endl;
 	}
@@ -349,9 +352,12 @@ private:
 			}
 		}
 		for (const auto& u : units) {
-			if (u->unit_type == UNIT_TYPEID::NEUTRAL_MINERALFIELD && Distance2D(u->pos, Observation()->GetStartLocation()) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[0]) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[1]) > 50.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[2]) > 50.0f) {
-				TryBuildStructureAt(u->pos, ABILITY_ID::BUILD_COMMANDCENTER);
-
+			if (u->unit_type == UNIT_TYPEID::NEUTRAL_MINERALFIELD && Distance2D(u->pos, Observation()->GetStartLocation()) > 20.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[0]) > 20.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[1]) > 20.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[2]) > 20.0f) {
+				if (find(occupied_mineral.begin(), occupied_mineral.end(), u->pos) == occupied_mineral.end()) {
+					TryBuildStructureAt(u->pos, ABILITY_ID::BUILD_COMMANDCENTER);
+					//occupied_mineral.push_back(u->pos);
+				}
+				
 			}
 		}
 	}
