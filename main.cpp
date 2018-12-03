@@ -34,6 +34,27 @@ struct IsVespeneGeyser {
 	}
 };
 
+struct IsArmy {
+	IsArmy(const ObservationInterface* obs) : observation_(obs) {}
+
+	bool operator()(const Unit& unit) {
+		auto attributes = observation_->GetUnitTypeData().at(unit.unit_type).attributes;
+		for (const auto& attribute : attributes) {
+			if (attribute == Attribute::Structure) {
+				return false;
+			}
+		}
+		switch (unit.unit_type.ToType()) {
+		case UNIT_TYPEID::TERRAN_SCV: return false;
+		case UNIT_TYPEID::TERRAN_MULE: return false;
+		case UNIT_TYPEID::TERRAN_NUKE: return false;
+		default: return true;
+		}
+	}
+
+	const ObservationInterface* observation_;
+};
+
 class Bot : public Agent {
 public:
 	vector<Tag> occupied_mineral;
@@ -84,9 +105,20 @@ public:
 			break;
 		}
 		case UNIT_TYPEID::TERRAN_BARRACKS: {
-			//if (Observation()->GetMinerals() >= 50) {
+			if (Observation()->GetGameLoop() % 2 == 0) {
+				Actions()->UnitCommand(unit, ABILITY_ID::BUILD_TECHLAB_BARRACKS);
+			} else {
+				Actions()->UnitCommand(unit, ABILITY_ID::BUILD_REACTOR_BARRACKS);
+			}
+			if (Observation()->GetGameLoop() % 3 == 0) {
+				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARAUDER);
+			}
+			if (Observation()->GetGameLoop() % 3 == 1) {
 				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
-			//}
+			}
+			if (Observation()->GetGameLoop() % 3 == 2) {
+				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_REAPER);
+			}
 			break;
 		}
 		case UNIT_TYPEID::TERRAN_MARINE: {
@@ -502,7 +534,7 @@ private:
 	bool TryDefense() {
 		const ObservationInterface* observation = Observation();
 		Units enemies = observation->GetUnits(Unit::Alliance::Enemy);
-		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_MARINE));
+		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsArmy(observation));
 		if (enemies.size() > 0) {
 			for (const auto& defense : defenses) {
 				Actions()->UnitCommand(defense, ABILITY_ID::ATTACK_ATTACK, FindNearestEnemy(defense->pos));
@@ -514,7 +546,7 @@ private:
 
 	bool TryGoBackToCommandCenter() {
 		const ObservationInterface* observation = Observation();
-		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_MARINE));
+		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsArmy(observation));
 		for (const auto& defense : defenses) {
 			if (DistanceSquared2D(defense->pos, FindNearestCommandCenter(defense->pos)->pos) > 500.0f) {
 				Actions()->UnitCommand(defense, ABILITY_ID::SMART, FindNearestCommandCenter(defense->pos)->pos);
