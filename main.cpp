@@ -85,8 +85,9 @@ public:
 		if (CountUnitType(UNIT_TYPEID::TERRAN_MISSILETURRET) < (CountUnitType(UNIT_TYPEID::TERRAN_BUNKER) * 1)) {
 			TryBuildStructure(ABILITY_ID::BUILD_MISSILETURRET);
 		}
-		TryDefense();
-		TryGoBackToCommandCenter();
+		if (!TryDefense()) {
+			TryGoBackToCommandCenter();
+		}
 	}
 
 	virtual void OnUnitIdle(const Unit* unit) final {
@@ -110,13 +111,13 @@ public:
 			} else {
 				Actions()->UnitCommand(unit, ABILITY_ID::BUILD_REACTOR_BARRACKS);
 			}
-			if (Observation()->GetGameLoop() % 3 == 0) {
-				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARAUDER);
-			}
-			if (Observation()->GetGameLoop() % 3 == 1) {
+			Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARAUDER);
+			if (Observation()->GetGameLoop() % 2 == 0) {
 				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
+				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_REAPER);
 			}
-			if (Observation()->GetGameLoop() % 3 == 2) {
+			else {
+				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_MARINE);
 				Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_REAPER);
 			}
 			break;
@@ -544,16 +545,34 @@ private:
 		return false;
 	}
 
-	bool TryGoBackToCommandCenter() {
+	void TryGoBackToCommandCenter() {
 		const ObservationInterface* observation = Observation();
 		Units defenses = observation->GetUnits(Unit::Alliance::Self, IsArmy(observation));
 		for (const auto& defense : defenses) {
-			if (DistanceSquared2D(defense->pos, FindNearestCommandCenter(defense->pos)->pos) > 500.0f) {
-				Actions()->UnitCommand(defense, ABILITY_ID::SMART, FindNearestCommandCenter(defense->pos)->pos);
-			}
-			return true;
+			RetreatWithUnit(defense, FindNearestCommandCenter(defense->pos)->pos);
 		}
-		return false;
+	}
+
+	// from s2client-api\examples\common\bot_examples.cc line 606, unit retreat
+	void RetreatWithUnit(const Unit* unit, Point2D retreat_position) {
+		float dist = Distance2D(unit->pos, retreat_position);
+
+		if (dist < 10) {
+			if (unit->orders.empty()) {
+				return;
+			}
+			Actions()->UnitCommand(unit, ABILITY_ID::STOP);
+			return;
+		}
+
+		if (unit->orders.empty() && dist > 14) {
+			Actions()->UnitCommand(unit, ABILITY_ID::MOVE, retreat_position);
+		}
+		else if (!unit->orders.empty() && dist > 14) {
+			if (unit->orders.front().ability_id != ABILITY_ID::MOVE) {
+				Actions()->UnitCommand(unit, ABILITY_ID::MOVE, retreat_position);
+			}
+		}
 	}
 };
 
@@ -564,7 +583,7 @@ int main(int argc, char* argv[]) {
 	Bot bot;
 	coordinator.SetParticipants({
 		CreateParticipant(Race::Terran, &bot),
-		CreateComputer(Race::Zerg, Difficulty::Hard)
+		CreateComputer(Race::Zerg, Difficulty::VeryHard)
 		});
 
 	coordinator.LaunchStarcraft();
