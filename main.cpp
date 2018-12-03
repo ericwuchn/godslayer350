@@ -23,6 +23,17 @@ struct IsTownHall {
 	}
 };
 
+struct IsVespeneGeyser {
+	bool operator()(const Unit& unit) {
+		switch (unit.unit_type.ToType()) {
+		case UNIT_TYPEID::NEUTRAL_VESPENEGEYSER: return true;
+		case UNIT_TYPEID::NEUTRAL_SPACEPLATFORMGEYSER: return true;
+		case UNIT_TYPEID::NEUTRAL_PROTOSSVESPENEGEYSER: return true;
+		default: return false;
+		}
+	}
+};
+
 class Bot : public Agent {
 public:
 	vector<Point2D> occupied_mineral;
@@ -34,6 +45,7 @@ public:
 		const ObservationInterface* observation = Observation();
 		Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
 		std::cout << Observation()->GetGameLoop() << std::endl;
+		TryBuildRefinery();
 		TryBuildSupplyDepot();
 		TryBuildBarracks();
 		TryBuildCommandCenters();
@@ -56,20 +68,15 @@ public:
 		switch (unit->unit_type.ToType()) {
 		case UNIT_TYPEID::TERRAN_COMMANDCENTER: {
 			// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
-			//if there is a base with less than ideal workers
-			//if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
-			//	if (Observation()->GetMinerals() >= 50) {
-			//		Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
-			//	}
-			//}
-
+			// if there is a base with less than ideal workers
+			if (unit->assigned_harvesters < unit->ideal_harvesters && unit->build_progress == 1) {
+				if (Observation()->GetMinerals() >= 50) {
+					Actions()->UnitCommand(unit, ABILITY_ID::TRAIN_SCV);
+				}
+			}
 		}
 		case UNIT_TYPEID::TERRAN_SCV: {
-			const Unit* mineral_target = FindNearestMineralPatch(unit->pos);
-			if (!mineral_target) {
-				break;
-			}
-			Actions()->UnitCommand(unit, ABILITY_ID::SMART, mineral_target);
+			MineIdleWorkers(unit, ABILITY_ID::HARVEST_GATHER, UNIT_TYPEID::TERRAN_SCV);
 			break;
 		}
 		case UNIT_TYPEID::TERRAN_BARRACKS: {
@@ -84,6 +91,11 @@ public:
 				break;
 			}
 			Actions()->UnitCommand(unit, ABILITY_ID::SMART, bunker_target);
+			break;
+		}
+		case UNIT_TYPEID::TERRAN_ENGINEERINGBAY: {
+			Actions()->UnitCommand(unit, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS);
+			Actions()->UnitCommand(unit, ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR);
 			break;
 		}
 		default: {
@@ -125,8 +137,40 @@ private:
 		return true;
 	}
 
+	// from s2client-api\examples\common\bot_examples.cc line 359
+    // Try to build a structure based on tag, Used mostly for Vespene, since the pathing check will fail even though the geyser is "Pathable"
+	bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag) {
+		const ObservationInterface* observation = Observation();
+		Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit_type));
+		const Unit* target = observation->GetUnit(location_tag);
+
+		if (workers.empty()) {
+			return false;
+		}
+
+		// Check to see if there is already a worker heading out to build it
+		for (const auto& worker : workers) {
+			for (const auto& order : worker->orders) {
+				if (order.ability_id == ability_type_for_structure) {
+					return false;
+				}
+			}
+		}
+
+		// If no worker is already building one, get a random worker to build one
+		const Unit* unit = GetRandomEntry(workers);
+
+		// Check to see if unit can build there
+		if (Query()->Placement(ability_type_for_structure, target->pos)) {
+			Actions()->UnitCommand(unit, ability_type_for_structure, target);
+			return true;
+		}
+		return false;
+
+	}
+
 	// from s2client-api\examples\common\bot_examples.cc line 508
-	//An estimate of how many workers we should have based on what buildings we have
+	// An estimate of how many workers we should have based on what buildings we have
 	int GetExpectedWorkers(UNIT_TYPEID vespene_building_type) {
 		const ObservationInterface* observation = Observation();
 		Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
@@ -149,6 +193,46 @@ private:
 		}
 
 		return expected_workers;
+	}
+
+	void MineIdleWorkers(const Unit* worker, AbilityID worker_gather_command, UnitTypeID vespene_building_type) {
+		const ObservationInterface* observation = Observation();
+		Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
+		Units geysers = observation->GetUnits(Unit::Alliance::Self, IsUnit(vespene_building_type));
+
+		const Unit* valid_mineral_patch = nullptr;
+
+		if (bases.empty()) {
+			return;
+		}
+
+		for (const auto& geyser : geysers) {
+			if (geyser->assigned_harvesters < geyser->ideal_harvesters) {
+				Actions()->UnitCommand(worker, worker_gather_command, geyser);
+				return;
+			}
+		}
+		//Search for a base that is missing workers.
+		for (const auto& base : bases) {
+			//If we have already mined out here skip the base.
+			if (base->ideal_harvesters == 0 || base->build_progress != 1) {
+				continue;
+			}
+			if (base->assigned_harvesters < base->ideal_harvesters) {
+				valid_mineral_patch = FindNearestMineralPatch(base->pos);
+				Actions()->UnitCommand(worker, worker_gather_command, valid_mineral_patch);
+				return;
+			}
+		}
+
+		if (!worker->orders.empty()) {
+			return;
+		}
+
+		//If all workers are spots are filled just go to any base.
+		const Unit* random_base = GetRandomEntry(bases);
+		valid_mineral_patch = FindNearestMineralPatch(random_base->pos);
+		Actions()->UnitCommand(worker, worker_gather_command, valid_mineral_patch);
 	}
 
 	// from s2client-api\examples\common\bot_examples.cc line 2092, for training SCV 
@@ -265,6 +349,53 @@ private:
 
 		// Try and build a depot. Find a random SCV and give it the order.
 		return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT);
+	}
+
+	// from s2client-api\examples\common\bot_examples.cc line 2904, for build refinery
+	bool TryBuildRefinery() {
+		const ObservationInterface* observation = Observation();
+		Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
+
+		if (CountUnitType(UNIT_TYPEID::TERRAN_REFINERY) >= observation->GetUnits(Unit::Alliance::Self, IsTownHall()).size() * 2) {
+			return false;
+		}
+
+		for (const auto& base : bases) {
+			if (base->assigned_harvesters >= base->ideal_harvesters) {
+				if (base->build_progress == 1) {
+					if (TryBuildGas(ABILITY_ID::BUILD_REFINERY, UNIT_TYPEID::TERRAN_SCV, base->pos)) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	// from s2client-api\examples\common\bot_examples.cc line 418, tries to build a geyser for a base
+	bool TryBuildGas(AbilityID build_ability, UnitTypeID worker_type, Point2D base_location) {
+		const ObservationInterface* observation = Observation();
+		Units geysers = observation->GetUnits(Unit::Alliance::Neutral, IsVespeneGeyser());
+
+		//only search within this radius
+		float minimum_distance = 15.0f;
+		Tag closestGeyser = 0;
+		for (const auto& geyser : geysers) {
+			float current_distance = Distance2D(base_location, geyser->pos);
+			if (current_distance < minimum_distance) {
+				if (Query()->Placement(build_ability, geyser->pos)) {
+					minimum_distance = current_distance;
+					closestGeyser = geyser->tag;
+				}
+			}
+		}
+
+		// In the case where there are no more available geysers nearby
+		if (closestGeyser == 0) {
+			return false;
+		}
+		return TryBuildStructure(build_ability, worker_type, closestGeyser);
+
 	}
 
 	bool TryBuildBarracks() {
@@ -386,7 +517,6 @@ private:
 		}
 		return false;
 	}
-
 };
 
 int main(int argc, char* argv[]) {
