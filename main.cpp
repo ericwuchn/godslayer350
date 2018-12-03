@@ -25,7 +25,8 @@ struct IsTownHall {
 
 class Bot : public Agent {
 public:
-	vector<Point2D> occupied_mineral;
+	vector<Tag> occupied_mineral;
+	vector<Tag>::iterator it;
 	virtual void OnGameStart() final {
 		std::cout << "Hello, World!" << std::endl;
 	}
@@ -36,7 +37,10 @@ public:
 		std::cout << Observation()->GetGameLoop() << std::endl;
 		TryBuildSupplyDepot();
 		TryBuildBarracks();
-		TryBuildCommandCenters();
+		if (observation->GetMinerals() > 400) {
+			TryBuildCommandCenters();
+		}
+		
 		TryBuildSCV();
 
 		if (CountUnitType(UNIT_TYPEID::TERRAN_BUNKER) < (CountUnitType(UNIT_TYPEID::TERRAN_BARRACKS) / 3)) {
@@ -353,9 +357,11 @@ private:
 		}
 		for (const auto& u : units) {
 			if (u->unit_type == UNIT_TYPEID::NEUTRAL_MINERALFIELD && Distance2D(u->pos, Observation()->GetStartLocation()) > 20.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[0]) > 20.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[1]) > 20.0f && Distance2D(u->pos, Observation()->GetGameInfo().enemy_start_locations[2]) > 20.0f) {
-				if (find(occupied_mineral.begin(), occupied_mineral.end(), u->pos) == occupied_mineral.end()) {
-					TryBuildStructureAt(u->pos, ABILITY_ID::BUILD_COMMANDCENTER);
-					//occupied_mineral.push_back(u->pos);
+				const Unit* nearest = FindNearestCommandCenter(u->pos);
+				if (nearest != nullptr) {
+					if (Distance2D(u->pos, Point2D(FindNearestCommandCenter(u->pos)->pos.x, FindNearestCommandCenter(u->pos)->pos.y)) > 20.0f) {
+						TryBuildStructureAt(u->pos, ABILITY_ID::BUILD_COMMANDCENTER);
+					}
 				}
 				
 			}
