@@ -80,7 +80,7 @@ public:
 			}
 		}
 		case UNIT_TYPEID::TERRAN_SCV: {
-			MineIdleWorkers(unit, ABILITY_ID::HARVEST_GATHER, UNIT_TYPEID::TERRAN_SCV);
+			MineIdleWorkers(unit, ABILITY_ID::HARVEST_GATHER, UNIT_TYPEID::TERRAN_REFINERY);
 			break;
 		}
 		case UNIT_TYPEID::TERRAN_BARRACKS: {
