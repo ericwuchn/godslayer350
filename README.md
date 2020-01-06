@@ -5,8 +5,8 @@ It focuses on against Zerg. It can win StarCraft II built-in Zerg AI with "Hard"
 Open "bot.sln" in Visual Studio 2017 and compile.
 Make sure the files are with include and lib folders of sc2api like it is structured in the GitHub Page, and CactusValleyLE should be put in the StarCraft II Maps folder.
 
-Demo:
+Demo:<br />
 Expansion Strategy
-https://www.youtube.com/watch?v=y-Qc1SYb8ig
+https://www.youtube.com/watch?v=y-Qc1SYb8ig<br />
 Against Zerg Built-in AI
 https://www.youtube.com/watch?v=b9Ms4F-PmS0
